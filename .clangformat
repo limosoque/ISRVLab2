@@ -1,0 +1,5 @@
+BasedOnStyle: UnrealEngine
+IndentWidth: 4
+TabWidth: 4
+UseTab: Always
+ColumnLimit: 120
