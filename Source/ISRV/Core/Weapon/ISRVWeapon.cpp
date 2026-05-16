@@ -49,9 +49,20 @@ FHitResult AISRVWeapon::MakeShot()
 	FRotator PlayerViewRotator;
 	PlayerController->GetPlayerViewPoint(PlayerViewPoint, PlayerViewRotator);
 
-	PlayCharacterMontage(FireMontage.Get());
+	FRotator CharacterRotation = Character->GetActorRotation();
+	CharacterRotation.Yaw = PlayerViewRotator.Yaw;
+	Character->SetActorRotation(CharacterRotation);
 
-	return WeaponBarrel->Shot(PlayerViewPoint, PlayerViewRotator.RotateVector(FVector::ForwardVector), 0.f);
+	const FVector ShotStart = WeaponBarrel->GetComponentLocation();
+	const FVector AimTarget = PlayerViewPoint + PlayerViewRotator.RotateVector(FVector::ForwardVector) * 100000.f;
+	const FVector ShotDirection = (AimTarget - ShotStart).GetSafeNormal();
+
+	return WeaponBarrel->Shot(ShotStart, ShotDirection, 0.f);
+}
+
+float AISRVWeapon::PlayFireAnimation()
+{
+	return PlayCharacterMontage(FireMontage.Get());
 }
 
 float AISRVWeapon::PlayReloadAnimation()

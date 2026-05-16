@@ -68,6 +68,12 @@ void UISRVEquipementComponent::EquipLastWeapon()
 
 void UISRVEquipementComponent::EquipItemInSlot(const EEquipementSlots& Slot)
 {
+	if (bIsShotPending)
+	{
+		RestoreAmmoInMagazine(PendingShotSlot, PendingShotAmmoAmount);
+		ResetPendingShot();
+	}
+
 	const uint8 SlotIndex = static_cast<uint8>(Slot);
 	if (!WeaponArray.IsValidIndex(SlotIndex))
 	{
@@ -97,6 +103,12 @@ void UISRVEquipementComponent::EquipItemInSlot(const EEquipementSlots& Slot)
 
 void UISRVEquipementComponent::UnequipCurrentWeapon()
 {
+	if (bIsShotPending)
+	{
+		RestoreAmmoInMagazine(PendingShotSlot, PendingShotAmmoAmount);
+		ResetPendingShot();
+	}
+
 	if (CurrentEquippedSlot == EEquipementSlots::None || !IsValid(currentWeapon))
 	{
 		return;
@@ -164,6 +176,11 @@ bool UISRVEquipementComponent::TryMakeShot()
 		UE_LOG(LogISRV, Log, TEXT("Cannot shoot: current weapon is reloading"));
 		return false;
 	}
+	if (bIsShotPending)
+	{
+		UE_LOG(LogISRV, Log, TEXT("Cannot shoot: previous shot is still pending"));
+		return false;
+	}
 
 	FISRVWeaponAmmoState* AmmoState = GetAmmoState(CurrentEquippedSlot);
 	if (!AmmoState)
@@ -182,16 +199,31 @@ bool UISRVEquipementComponent::TryMakeShot()
 	}
 
 	AmmoState->CurrentAmmoInMagazine -= AmmoPerShot;
-	const FHitResult HitResult = currentWeapon->MakeShot();
-	RestoreAmmoForHeadshotIfNeeded(HitResult, CurrentEquippedSlot, AmmoPerShot);
 
-	UE_LOG(LogISRV, Log, TEXT("Shot. Ammo: %d / %d"), AmmoState->CurrentAmmoInMagazine, AmmoState->TotalAmmo);
+	currentWeapon->PlayFireAnimation();
+
+	bIsShotPending = true;
+	PendingShotSlot = CurrentEquippedSlot;
+	PendingShotAmmoAmount = AmmoPerShot;
+	PendingShotWeapon = currentWeapon;
+
+	const float ShotDelay = FMath::Max(currentWeapon->GetShotDelay(), 0.f);
+	UE_LOG(LogISRV, Log, TEXT("Shot requested. Ammo: %d / %d"), AmmoState->CurrentAmmoInMagazine, AmmoState->TotalAmmo);
+
+	if (ShotDelay <= KINDA_SMALL_NUMBER || !GetWorld())
+	{
+		FinishPendingShot();
+	}
+	else
+	{
+		GetWorld()->GetTimerManager().SetTimer(ShotDelayTimer, this, &UISRVEquipementComponent::FinishPendingShot, ShotDelay, false);
+	}
 	return true;
 }
 
 bool UISRVEquipementComponent::ReloadCurrentWeapon()
 {
-	if (!IsValid(currentWeapon) || CurrentEquippedSlot == EEquipementSlots::None || bIsReloading)
+	if (!IsValid(currentWeapon) || CurrentEquippedSlot == EEquipementSlots::None || bIsReloading || bIsShotPending)
 	{
 		return false;
 	}
@@ -271,6 +303,62 @@ void UISRVEquipementComponent::InitializeAmmoForWeapon(EEquipementSlots Slot, co
 	AmmoState.TotalAmmo = FMath::Max(AmmoConfig.InitialAmmoReserve, 0);
 }
 
+void UISRVEquipementComponent::FinishPendingShot()
+{
+	const EEquipementSlots ShotSlot = PendingShotSlot;
+	const int32 AmmoAmount = PendingShotAmmoAmount;
+	AISRVWeapon* ShotWeapon = PendingShotWeapon.Get();
+
+	ResetPendingShot();
+
+	if (!IsValid(ShotWeapon) || ShotWeapon != currentWeapon || ShotSlot != CurrentEquippedSlot)
+	{
+		RestoreAmmoInMagazine(ShotSlot, AmmoAmount);
+		return;
+	}
+
+	const FHitResult HitResult = ShotWeapon->MakeShot();
+	RestoreAmmoForHeadshotIfNeeded(HitResult, ShotSlot, AmmoAmount);
+
+	const FISRVWeaponAmmoState* AmmoState = GetAmmoState(ShotSlot);
+	if (AmmoState)
+	{
+		UE_LOG(LogISRV, Log, TEXT("Shot. Ammo: %d / %d"), AmmoState->CurrentAmmoInMagazine, AmmoState->TotalAmmo);
+	}
+}
+
+void UISRVEquipementComponent::ResetPendingShot()
+{
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(ShotDelayTimer);
+	}
+
+	bIsShotPending = false;
+	PendingShotSlot = EEquipementSlots::None;
+	PendingShotAmmoAmount = 0;
+	PendingShotWeapon.Reset();
+}
+
+bool UISRVEquipementComponent::RestoreAmmoInMagazine(EEquipementSlots Slot, int32 AmmoAmountToRestore)
+{
+	if (AmmoAmountToRestore <= 0)
+	{
+		return false;
+	}
+
+	FISRVWeaponAmmoState* AmmoState = GetAmmoState(Slot);
+	AISRVWeapon* Weapon = GetWeaponInSlot(Slot);
+	if (!AmmoState || !IsValid(Weapon))
+	{
+		return false;
+	}
+
+	const int32 MagazineCapacity = FMath::Max(Weapon->GetAmmoConfig().MaxAmmoInMagazine, 1);
+	AmmoState->CurrentAmmoInMagazine = FMath::Min(AmmoState->CurrentAmmoInMagazine + AmmoAmountToRestore, MagazineCapacity);
+	return true;
+}
+
 void UISRVEquipementComponent::FinishReload()
 {
 	FISRVWeaponAmmoState* AmmoState = GetAmmoState(ReloadingSlot);
@@ -299,6 +387,17 @@ bool UISRVEquipementComponent::RestoreAmmoForHeadshotIfNeeded(const FHitResult& 
 		return false;
 	}
 
+	const FString HitActorName = GetNameSafe(HitResult.GetActor());
+	const FString HitComponentName = GetNameSafe(HitResult.GetComponent());
+	const FString HitBoneName = HitResult.BoneName.IsNone() ? TEXT("None") : HitResult.BoneName.ToString();
+	UE_LOG(LogISRV, Log, TEXT("Headshot check. Actor: %s, Component: %s, Bone: %s"), *HitActorName, *HitComponentName, *HitBoneName);
+
+	if (HitResult.BoneName.IsNone())
+	{
+		UE_LOG(LogISRV, Warning, TEXT("Headshot check failed: hit has no bone name. The trace probably hit capsule/simple collision instead of skeletal mesh."));
+		return false;
+	}
+
 	const FString BoneName = HitResult.BoneName.ToString();
 	bool bIsHeadshot = BoneName.Contains(TEXT("head"), ESearchCase::IgnoreCase);
 	for (const FName& HeadshotBoneName : HeadshotBoneNames)
@@ -315,16 +414,16 @@ bool UISRVEquipementComponent::RestoreAmmoForHeadshotIfNeeded(const FHitResult& 
 		return false;
 	}
 
-	FISRVWeaponAmmoState* AmmoState = GetAmmoState(Slot);
-	AISRVWeapon* Weapon = GetWeaponInSlot(Slot);
-	if (!AmmoState || !IsValid(Weapon))
+	if (!RestoreAmmoInMagazine(Slot, AmmoAmountToRestore))
 	{
 		return false;
 	}
 
-	const int32 MagazineCapacity = FMath::Max(Weapon->GetAmmoConfig().MaxAmmoInMagazine, 1);
-	AmmoState->CurrentAmmoInMagazine = FMath::Min(AmmoState->CurrentAmmoInMagazine + AmmoAmountToRestore, MagazineCapacity);
-	UE_LOG(LogISRV, Log, TEXT("Headshot! Ammo restored. Ammo: %d / %d"), AmmoState->CurrentAmmoInMagazine, AmmoState->TotalAmmo);
+	const FISRVWeaponAmmoState* AmmoState = GetAmmoState(Slot);
+	if (AmmoState)
+	{
+		UE_LOG(LogISRV, Log, TEXT("Headshot! Ammo restored. Ammo: %d / %d"), AmmoState->CurrentAmmoInMagazine, AmmoState->TotalAmmo);
+	}
 	return true;
 }
 

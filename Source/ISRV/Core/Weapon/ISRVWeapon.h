@@ -49,6 +49,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category = "Animation")
 	TWeakObjectPtr<UAnimMontage> FireMontage;
 
+	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category = "Weapon|Fire", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float ShotDelay = 0.f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
 	class USkeletalMeshComponent* WeaponMesh;
 
@@ -68,9 +71,11 @@ private:
 #pragma region WEAPON_ACTIONS
 public:
 	FHitResult MakeShot();
+	float PlayFireAnimation();
 	float PlayReloadAnimation();
 
 	FORCEINLINE const FISRVWeaponAmmoConfig& GetAmmoConfig() const { return AmmoConfig; }
+	FORCEINLINE float GetShotDelay() const { return ShotDelay; }
 
 private:
 	float PlayCharacterMontage(UAnimMontage* MontageToPlay) const;

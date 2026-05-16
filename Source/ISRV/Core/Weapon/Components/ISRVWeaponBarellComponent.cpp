@@ -2,7 +2,10 @@
 
 #include "ISRVWeaponBarellComponent.h"
 
+#include <CollisionQueryParams.h>
 #include <Components/DecalComponent.h>
+#include <Components/PrimitiveComponent.h>
+#include <Components/SkeletalMeshComponent.h>
 #include <DrawDebugHelpers.h>
 #include <Engine/DamageEvents.h>
 #include <GameFramework/DamageType.h>
@@ -25,8 +28,34 @@ FHitResult UISRVWeaponBarellComponent::Shot(
 	DrawDebugLine(GetWorld(), ShotStart, ShotEnd, FColor::Purple, false, 2.f, (uint8)0U, 1.f);
 
 	FHitResult HitResult;
-	if (GetWorld()->LineTraceSingleByChannel(HitResult, ShotStart, ShotEnd, ECC_Visibility))
+	FCollisionQueryParams QueryParams;
+	QueryParams.bTraceComplex = true;
+	QueryParams.bReturnPhysicalMaterial = true;
+	QueryParams.AddIgnoredActor(GetOwner());
+	if (APawn* OwningCharacter = GetOwningCharacter())
 	{
+		QueryParams.AddIgnoredActor(OwningCharacter);
+	}
+
+	if (GetWorld()->LineTraceSingleByChannel(HitResult, ShotStart, ShotEnd, ECC_Visibility, QueryParams))
+	{
+		if (HitResult.BoneName.IsNone())
+		{
+			FCollisionQueryParams MeshQueryParams = QueryParams;
+			if (UPrimitiveComponent* HitComponent = HitResult.GetComponent())
+			{
+				MeshQueryParams.AddIgnoredComponent(HitComponent);
+			}
+
+			FHitResult MeshHitResult;
+			if (GetWorld()->LineTraceSingleByChannel(MeshHitResult, ShotStart, ShotEnd, ECC_Visibility, MeshQueryParams)
+				&& MeshHitResult.GetActor() == HitResult.GetActor()
+				&& Cast<USkeletalMeshComponent>(MeshHitResult.GetComponent()))
+			{
+				HitResult = MeshHitResult;
+			}
+		}
+
 		ProcessHit(HitResult, RealDirection, DamagePercent);
 		SpawnImpactDecal(HitResult);
 	}

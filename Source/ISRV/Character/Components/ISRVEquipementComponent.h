@@ -79,6 +79,9 @@ private:
 
 	void EquipItemInSlot(const EEquipementSlots& Slot);
 	void InitializeAmmoForWeapon(EEquipementSlots Slot, const AISRVWeapon* Weapon);
+	void FinishPendingShot();
+	void ResetPendingShot();
+	bool RestoreAmmoInMagazine(EEquipementSlots Slot, int32 AmmoAmountToRestore);
 	void FinishReload();
 	bool RestoreAmmoForHeadshotIfNeeded(const FHitResult& HitResult, EEquipementSlots Slot, int32 AmmoAmountToRestore);
 	FISRVWeaponAmmoState* GetAmmoState(EEquipementSlots Slot);
@@ -107,6 +110,12 @@ private:
 	bool bIsReloading = false;
 	EEquipementSlots ReloadingSlot = EEquipementSlots::None;
 	FTimerHandle ReloadTimer;
+
+	bool bIsShotPending = false;
+	EEquipementSlots PendingShotSlot = EEquipementSlots::None;
+	int32 PendingShotAmmoAmount = 0;
+	TWeakObjectPtr<AISRVWeapon> PendingShotWeapon;
+	FTimerHandle ShotDelayTimer;
 
 	TWeakObjectPtr<class AISRVCharacter> CachedCharacterPtr;
 };
