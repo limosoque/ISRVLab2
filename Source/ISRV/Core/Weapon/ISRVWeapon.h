@@ -11,6 +11,8 @@
 #include "ISRVWeapon.generated.h"
 
 class UAnimMontage;
+class USkeletalMeshComponent;
+class UISRVWeaponBarellComponent;
 
 USTRUCT(BlueprintType)
 struct FISRVWeaponAmmoConfig
@@ -44,19 +46,19 @@ public:
 #pragma region WEAPON_PROPERTIES
 protected:
 	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category = "Animation")
-	TWeakObjectPtr<UAnimMontage> ReloadMontage;
+	TObjectPtr<UAnimMontage> ReloadMontage;
 
 	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category = "Animation")
-	TWeakObjectPtr<UAnimMontage> FireMontage;
+	TObjectPtr<UAnimMontage> FireMontage;
 
 	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category = "Weapon|Fire", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float ShotDelay = 0.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
-	class USkeletalMeshComponent* WeaponMesh;
+	USkeletalMeshComponent* WeaponMesh;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
-	class UISRVWeaponBarellComponent* WeaponBarrel;
+	UISRVWeaponBarellComponent* WeaponBarrel;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ammo")
 	FISRVWeaponAmmoConfig AmmoConfig;
@@ -71,6 +73,7 @@ private:
 #pragma region WEAPON_ACTIONS
 public:
 	FHitResult MakeShot();
+	void AlignOwnerToCamera() const;
 	float PlayFireAnimation();
 	float PlayReloadAnimation();
 

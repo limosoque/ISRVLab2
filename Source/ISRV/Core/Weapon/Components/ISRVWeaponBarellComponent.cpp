@@ -15,7 +15,7 @@ FHitResult UISRVWeaponBarellComponent::Shot(
 	const FVector& ShotStart,
 	const FVector& ShotDirection,
 	float SpreadAngle,
-	float DamagePercent /* = 1.f */ )
+	float DamagePercent)
 {
 	FVector RealDirection = ShotDirection.GetSafeNormal();
 	if (SpreadAngle > 0.f)
@@ -29,7 +29,7 @@ FHitResult UISRVWeaponBarellComponent::Shot(
 
 	FHitResult HitResult;
 	FCollisionQueryParams QueryParams;
-	QueryParams.bTraceComplex = true;
+	QueryParams.bTraceComplex = false;
 	QueryParams.bReturnPhysicalMaterial = true;
 	QueryParams.AddIgnoredActor(GetOwner());
 	if (APawn* OwningCharacter = GetOwningCharacter())

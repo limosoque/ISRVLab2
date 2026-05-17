@@ -60,6 +60,29 @@ FHitResult AISRVWeapon::MakeShot()
 	return WeaponBarrel->Shot(ShotStart, ShotDirection, 0.f);
 }
 
+void AISRVWeapon::AlignOwnerToCamera() const
+{
+	AISRVCharacter* Character = Cast<AISRVCharacter>(GetOwner());
+	if (!IsValid(Character))
+	{
+		return;
+	}
+
+	auto* PlayerController = Character->GetController<APlayerController>();
+	if (!IsValid(PlayerController) || !PlayerController->IsLocalController())
+	{
+		return;
+	}
+
+	FVector PlayerViewPoint;
+	FRotator PlayerViewRotator;
+	PlayerController->GetPlayerViewPoint(PlayerViewPoint, PlayerViewRotator);
+
+	FRotator CharacterRotation = Character->GetActorRotation();
+	CharacterRotation.Yaw = PlayerViewRotator.Yaw;
+	Character->SetActorRotation(CharacterRotation);
+}
+
 float AISRVWeapon::PlayFireAnimation()
 {
 	return PlayCharacterMontage(FireMontage.Get());

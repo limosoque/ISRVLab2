@@ -9,6 +9,8 @@
 
 #include "ISRVWeaponBarellComponent.generated.h"
 
+class UDamageType;
+
 UCLASS(meta = (BlueprintSpawnableComponent))
 class ISRV_API UISRVWeaponBarellComponent : public USceneComponent
 {
@@ -29,7 +31,7 @@ protected:
 	float FiringRange = 5000.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Barell attributes")
-	TSubclassOf<class UDamageType> DamageType;
+	TSubclassOf<UDamageType> DamageType;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Visual Effects")
 	TObjectPtr<UMaterialInterface> BulletHitDecalMaterial = nullptr;

@@ -3,6 +3,7 @@
 #include "ISRVCharacter.h"
 
 #include <Engine/LocalPlayer.h>
+#include <Engine/World.h>
 
 #include <Camera/CameraComponent.h>
 
@@ -26,6 +27,8 @@
 AISRVCharacter::AISRVCharacter(const FObjectInitializer& ObjectInitializer)
 : Super(ObjectInitializer.SetDefaultSubobjectClass<UISRVMovementComponent>(AISRVCharacter::CharacterMovementComponentName))
 {
+	//PrimaryActorTick.bCanEverTick = true;
+
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
 		
@@ -64,6 +67,30 @@ AISRVCharacter::AISRVCharacter(const FObjectInitializer& ObjectInitializer)
 	EquipementComponent = CreateDefaultSubobject<UISRVEquipementComponent>(TEXT("EquipementComponent"));
 }
 
+
+void AISRVCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (IsValid(FollowCamera))
+	{
+		DefaultCameraFOV = FollowCamera->FieldOfView;
+	}
+	if (IsValid(CameraBoom))
+	{
+		DefaultCameraArmLength = CameraBoom->TargetArmLength;
+		DefaultCameraSocketOffset = CameraBoom->SocketOffset;
+	}
+}
+
+void AISRVCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	UpdateAim(DeltaSeconds);
+}
+
+
 void AISRVCharacter::Shoot(const FInputActionValue& Value)
 {
 	if (!IsValid(EquipementComponent))
@@ -89,6 +116,12 @@ void AISRVCharacter::ReloadFromKeyboard()
 
 void AISRVCharacter::EquipNextWeapon(const FInputActionValue& Value)
 {
+	if (!CanProcessWeaponSwitchInput(1))
+	{
+		return;
+	}
+
+	UE_LOG(LogISRV, Log, TEXT("Next weapon input received"));
 	if (!IsValid(EquipementComponent))
 	{
 		return;
@@ -99,12 +132,95 @@ void AISRVCharacter::EquipNextWeapon(const FInputActionValue& Value)
 
 void AISRVCharacter::EquipPreviousWeapon(const FInputActionValue& Value)
 {
+	if (!CanProcessWeaponSwitchInput(-1))
+	{
+		return;
+	}
+
+	UE_LOG(LogISRV, Log, TEXT("Previous weapon input received"));
 	if (!IsValid(EquipementComponent))
 	{
 		return;
 	}
 
 	EquipementComponent->EquipPreviousWeapon();
+}
+
+
+void AISRVCharacter::StartAim(const FInputActionValue& Value)
+{
+	SetAiming(true);
+}
+
+void AISRVCharacter::StopAim(const FInputActionValue& Value)
+{
+	SetAiming(false);
+}
+
+void AISRVCharacter::SetAiming(bool bNewIsAiming)
+{
+	if (bIsAiming == bNewIsAiming)
+	{
+		return;
+	}
+
+	bIsAiming = bNewIsAiming;
+	bUseControllerRotationYaw = bIsAiming;
+
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->bOrientRotationToMovement = !bIsAiming;
+	}
+}
+
+void AISRVCharacter::UpdateAim(float DeltaSeconds)
+{
+	const float InterpSpeed = FMath::Max(AimCameraInterpSpeed, 0.f);
+
+	if (IsValid(FollowCamera))
+	{
+		const float TargetFOV = bIsAiming ? AimCameraFOV : DefaultCameraFOV;
+		const float NewFOV = FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaSeconds, InterpSpeed);
+		FollowCamera->SetFieldOfView(NewFOV);
+	}
+
+	if (IsValid(CameraBoom))
+	{
+		const float TargetArmLength = bIsAiming ? AimCameraArmLength : DefaultCameraArmLength;
+		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaSeconds, InterpSpeed);
+
+		const FVector TargetSocketOffset = bIsAiming ? AimCameraSocketOffset : DefaultCameraSocketOffset;
+		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaSeconds, InterpSpeed);
+	}
+
+	if (bIsAiming && IsValid(GetController()))
+	{
+		const FRotator ControlRotation = GetController()->GetControlRotation();
+		const FRotator TargetRotation(0.f, ControlRotation.Yaw, 0.f);
+		const float RotationInterpSpeed = FMath::Max(AimRotationInterpSpeed, 0.f);
+		SetActorRotation(FMath::RInterpTo(GetActorRotation(), TargetRotation, DeltaSeconds, RotationInterpSpeed));
+	}
+}
+
+
+bool AISRVCharacter::CanProcessWeaponSwitchInput(int32 Direction)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return true;
+	}
+
+	const float CurrentTime = World->GetTimeSeconds();
+	constexpr float WeaponSwitchInputDebounceTime = 0.05f;
+	if (LastWeaponSwitchDirection == Direction && CurrentTime - LastWeaponSwitchInputTime <= WeaponSwitchInputDebounceTime)
+	{
+		return false;
+	}
+
+	LastWeaponSwitchInputTime = CurrentTime;
+	LastWeaponSwitchDirection = Direction;
+	return true;
 }
 
 #pragma endregion
@@ -132,13 +248,15 @@ void AISRVCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		// Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AISRVCharacter::Look);
 		EnhancedInputComponent->BindAction(ShootAction, ETriggerEvent::Triggered, this, &AISRVCharacter::Shoot);
+		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Started, this, &AISRVCharacter::StartAim);
+		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Completed, this, &AISRVCharacter::StopAim);
 
 		// Reload
 		EnhancedInputComponent->BindAction(ReloadAction, ETriggerEvent::Started, this, &AISRVCharacter::Reload);
 
-		// Change Weapion
-		EnhancedInputComponent->BindAction(NextWeaponAction, ETriggerEvent::Started, this, &AISRVCharacter::EquipNextWeapon);
-		EnhancedInputComponent->BindAction(PreviousWeaponAction, ETriggerEvent::Started, this, &AISRVCharacter::EquipPreviousWeapon);
+		// Change Weapon
+		EnhancedInputComponent->BindAction(NextWeaponAction, ETriggerEvent::Triggered, this, &AISRVCharacter::EquipNextWeapon);
+		EnhancedInputComponent->BindAction(PreviousWeaponAction, ETriggerEvent::Triggered, this, &AISRVCharacter::EquipPreviousWeapon);
 	}
 	else
 	{

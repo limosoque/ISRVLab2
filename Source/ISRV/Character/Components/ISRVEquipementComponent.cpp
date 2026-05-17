@@ -2,6 +2,8 @@
 
 #include "ISRVEquipementComponent.h"
 
+#include <Engine/Engine.h>
+
 #include "Character/ISRVCharacter.h"
 #include "Core/Weapon/ISRVWeapon.h"
 
@@ -98,6 +100,7 @@ void UISRVEquipementComponent::EquipItemInSlot(const EEquipementSlots& Slot)
 	if (AmmoState)
 	{
 		UE_LOG(LogISRV, Log, TEXT("Equipped weapon. Ammo: %d / %d"), AmmoState->CurrentAmmoInMagazine, AmmoState->TotalAmmo);
+		ShowWeaponStatusOnScreen(CurrentEquippedSlot, TEXT("Equipped"), FColor::Cyan);
 	}
 }
 
@@ -194,12 +197,14 @@ bool UISRVEquipementComponent::TryMakeShot()
 	if (AmmoState->CurrentAmmoInMagazine < AmmoPerShot)
 	{
 		UE_LOG(LogISRV, Warning, TEXT("Magazine is empty. Trying to reload..."));
+		ShowWeaponStatusOnScreen(CurrentEquippedSlot, TEXT("Magazine empty"), FColor::Red);
 		ReloadCurrentWeapon();
 		return false;
 	}
 
 	AmmoState->CurrentAmmoInMagazine -= AmmoPerShot;
 
+	currentWeapon->AlignOwnerToCamera();
 	currentWeapon->PlayFireAnimation();
 
 	bIsShotPending = true;
@@ -209,6 +214,7 @@ bool UISRVEquipementComponent::TryMakeShot()
 
 	const float ShotDelay = FMath::Max(currentWeapon->GetShotDelay(), 0.f);
 	UE_LOG(LogISRV, Log, TEXT("Shot requested. Ammo: %d / %d"), AmmoState->CurrentAmmoInMagazine, AmmoState->TotalAmmo);
+	ShowWeaponStatusOnScreen(CurrentEquippedSlot, TEXT("Shot requested"), FColor::White);
 
 	if (ShotDelay <= KINDA_SMALL_NUMBER || !GetWorld())
 	{
@@ -239,6 +245,7 @@ bool UISRVEquipementComponent::ReloadCurrentWeapon()
 	if (AmmoState->CurrentAmmoInMagazine >= MagazineCapacity || AmmoState->TotalAmmo <= 0)
 	{
 		UE_LOG(LogISRV, Log, TEXT("Reload skipped. Ammo: %d / %d"), AmmoState->CurrentAmmoInMagazine, AmmoState->TotalAmmo);
+		ShowWeaponStatusOnScreen(CurrentEquippedSlot, TEXT("Reload skipped"), FColor::White);
 		return false;
 	}
 
@@ -261,6 +268,7 @@ bool UISRVEquipementComponent::ReloadCurrentWeapon()
 	}
 
 	UE_LOG(LogISRV, Log, TEXT("Reload started"));
+	ShowWeaponStatusOnScreen(ReloadingSlot, TEXT("Reloading"), FColor::Yellow);
 	return true;
 }
 
@@ -324,6 +332,7 @@ void UISRVEquipementComponent::FinishPendingShot()
 	if (AmmoState)
 	{
 		UE_LOG(LogISRV, Log, TEXT("Shot. Ammo: %d / %d"), AmmoState->CurrentAmmoInMagazine, AmmoState->TotalAmmo);
+		ShowWeaponStatusOnScreen(ShotSlot, TEXT("Shot"), FColor::White);
 	}
 }
 
@@ -374,6 +383,7 @@ void UISRVEquipementComponent::FinishReload()
 		AmmoState->TotalAmmo -= AmmoToReload;
 
 		UE_LOG(LogISRV, Log, TEXT("Reload finished. Ammo: %d / %d"), AmmoState->CurrentAmmoInMagazine, AmmoState->TotalAmmo);
+		ShowWeaponStatusOnScreen(ReloadingSlot, TEXT("Reload finished"), FColor::Green);
 	}
 
 	bIsReloading = false;
@@ -394,12 +404,11 @@ bool UISRVEquipementComponent::RestoreAmmoForHeadshotIfNeeded(const FHitResult& 
 
 	if (HitResult.BoneName.IsNone())
 	{
-		UE_LOG(LogISRV, Warning, TEXT("Headshot check failed: hit has no bone name. The trace probably hit capsule/simple collision instead of skeletal mesh."));
+		UE_LOG(LogISRV, Warning, TEXT("Headshot check faild"));
 		return false;
 	}
 
-	const FString BoneName = HitResult.BoneName.ToString();
-	bool bIsHeadshot = BoneName.Contains(TEXT("head"), ESearchCase::IgnoreCase);
+	bool bIsHeadshot = false;
 	for (const FName& HeadshotBoneName : HeadshotBoneNames)
 	{
 		if (HitResult.BoneName == HeadshotBoneName)
@@ -422,9 +431,59 @@ bool UISRVEquipementComponent::RestoreAmmoForHeadshotIfNeeded(const FHitResult& 
 	const FISRVWeaponAmmoState* AmmoState = GetAmmoState(Slot);
 	if (AmmoState)
 	{
-		UE_LOG(LogISRV, Log, TEXT("Headshot! Ammo restored. Ammo: %d / %d"), AmmoState->CurrentAmmoInMagazine, AmmoState->TotalAmmo);
+		UE_LOG(LogISRV, Log, TEXT("Headshot. Ammo restored. Ammo: %d / %d"), AmmoState->CurrentAmmoInMagazine, AmmoState->TotalAmmo);
+		ShowWeaponStatusOnScreen(Slot, TEXT("Headshot: free shot!"), FColor::Green);
 	}
 	return true;
+}
+
+void UISRVEquipementComponent::ShowWeaponStatusOnScreen(EEquipementSlots Slot, const FString& EventText, const FColor& Color, float Duration) const
+{
+	const AISRVWeapon* Weapon = GetWeaponInSlot(Slot);
+	const FISRVWeaponAmmoState* AmmoState = GetAmmoState(Slot);
+	if (!IsValid(Weapon) || !AmmoState)
+	{
+		return;
+	}
+
+	const int32 MagazineCapacity = FMath::Max(Weapon->GetAmmoConfig().MaxAmmoInMagazine, 1);
+	const FString Message = FString::Printf(
+		TEXT("%s | Weapon: %s | Magazine: %d/%d | Reserve: %d"),
+		EventText.IsEmpty() ? TEXT("Status") : *EventText,
+		*GetWeaponTypeText(Weapon),
+		AmmoState->CurrentAmmoInMagazine,
+		MagazineCapacity,
+		AmmoState->TotalAmmo
+	);
+
+	ShowDebugMessageOnScreen(Message, Color, Duration);
+}
+
+void UISRVEquipementComponent::ShowDebugMessageOnScreen(const FString& Message, const FColor& Color, float Duration) const
+{
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, Duration, Color, Message);
+	}
+}
+
+FString UISRVEquipementComponent::GetWeaponTypeText(const AISRVWeapon* Weapon) const
+{
+	if (!IsValid(Weapon))
+	{
+		return TEXT("None");
+	}
+
+	switch (Weapon->GetEquipableItemType())
+	{
+	case EWeaponType::Pistol:
+		return TEXT("Pistol");
+	case EWeaponType::Rifle:
+		return TEXT("AssaultRifle");
+	case EWeaponType::None:
+	default:
+		return TEXT("None");
+	}
 }
 
 FISRVWeaponAmmoState* UISRVEquipementComponent::GetAmmoState(EEquipementSlots Slot)

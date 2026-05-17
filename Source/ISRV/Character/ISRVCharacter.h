@@ -13,13 +13,10 @@ class USpringArmComponent;
 class UCameraComponent;
 class UInputAction;
 struct FInputActionValue;
+class UCameraComponent;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
-/**
- *  A simple player-controllable third person character
- *  Implements a controllable orbiting camera
- */
 UCLASS(abstract)
 class AISRVCharacter : public ACharacter
 {
@@ -28,23 +25,9 @@ class AISRVCharacter : public ACharacter
 
 	AISRVCharacter(const FObjectInitializer& ObjectInitializer);
 
-public:
-	//UCharacterMovementComponent* GetBaseMovementComponent() const;
-
-
-
-
-
-	// TODO: Equip and Shoot actions
-
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	class UISRVEquipementComponent* EquipementComponent;
-
-
-
-
-
 
 private:
 	/** Camera boom positioning the camera behind the character */
@@ -56,7 +39,6 @@ private:
 	UCameraComponent* FollowCamera;
 	
 protected:
-
 	/** Jump Input Action */
 	UPROPERTY(EditAnywhere, Category="Input")
 	UInputAction* JumpAction;
@@ -85,14 +67,45 @@ protected:
     
     UPROPERTY(EditAnywhere, Category = "Input")
     UInputAction* PreviousWeaponAction;
-    
-protected:
 
+	// Aim is temporarily disabled to diagnose weapon-switch input.
+	UPROPERTY(EditAnywhere, Category = "Input")
+	UInputAction* AimAction;
+    
 	/** Initialize input action bindings */
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-protected:
+	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 
+protected:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aim")
+	float AimCameraFOV = 65.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aim")
+	float AimCameraArmLength = 280.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aim")
+	FVector AimCameraSocketOffset = FVector(0.f, 60.f, 25.f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aim", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float AimCameraInterpSpeed = 12.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aim", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float AimRotationInterpSpeed = 20.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Aim")
+	bool bIsAiming = false;
+
+	
+private:
+	float DefaultCameraFOV = 90.f;
+	float DefaultCameraArmLength = 400.f;
+	FVector DefaultCameraSocketOffset = FVector::ZeroVector;
+	float LastWeaponSwitchInputTime = -1.f;
+	int32 LastWeaponSwitchDirection = 0;
+
+protected:
 	/** Called for movement input */
 	void Move(const FInputActionValue& Value);
 
@@ -108,8 +121,14 @@ protected:
 
 	void EquipNextWeapon(const FInputActionValue& Value);
 	void EquipPreviousWeapon(const FInputActionValue& Value);
-public:
 
+	void StartAim(const FInputActionValue& Value);
+	void StopAim(const FInputActionValue& Value);
+	void SetAiming(bool bNewIsAiming);
+	void UpdateAim(float DeltaSeconds);
+	bool CanProcessWeaponSwitchInput(int32 Direction);
+	
+public:
 	/** Handles move inputs from either controls or UI interfaces */
 	UFUNCTION(BlueprintCallable, Category="Input")
 	virtual void DoMove(float Right, float Forward);
@@ -129,9 +148,8 @@ public:
 public:
 
 	/** Returns CameraBoom subobject **/
-	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
+	FORCEINLINE USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 
 	/** Returns FollowCamera subobject **/
-	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
+	FORCEINLINE UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 };
-

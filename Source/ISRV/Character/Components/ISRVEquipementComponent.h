@@ -84,6 +84,12 @@ private:
 	bool RestoreAmmoInMagazine(EEquipementSlots Slot, int32 AmmoAmountToRestore);
 	void FinishReload();
 	bool RestoreAmmoForHeadshotIfNeeded(const FHitResult& HitResult, EEquipementSlots Slot, int32 AmmoAmountToRestore);
+
+	//Debug
+	void ShowWeaponStatusOnScreen(EEquipementSlots Slot, const FString& EventText, const FColor& Color, float Duration = 2.f) const;
+	void ShowDebugMessageOnScreen(const FString& Message, const FColor& Color, float Duration = 2.f) const;
+	FString GetWeaponTypeText(const AISRVWeapon* Weapon) const;
+	
 	FISRVWeaponAmmoState* GetAmmoState(EEquipementSlots Slot);
 	const FISRVWeaponAmmoState* GetAmmoState(EEquipementSlots Slot) const;
 	AISRVWeapon* GetWeaponInSlot(EEquipementSlots Slot) const;
